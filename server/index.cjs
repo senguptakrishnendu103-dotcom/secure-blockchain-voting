@@ -16,6 +16,37 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// Helper function to send email via Resend API (HTTP) if key is set, otherwise fallback to SMTP
+const sendMailHelper = async ({ to, subject, html }) => {
+  if (process.env.RESEND_API_KEY) {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`
+      },
+      body: JSON.stringify({
+        from: 'SecureVote <onboarding@resend.dev>',
+        to: to,
+        subject: subject,
+        html: html
+      })
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Resend API Error: ${errText}`);
+    }
+    return { success: true };
+  } else {
+    return transporter.sendMail({
+      from: `"SecureVote Portal" <${process.env.EMAIL_USER || 'dreamysoul719@gmail.com'}>`,
+      to: to,
+      subject: subject,
+      html: html
+    });
+  }
+};
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -116,8 +147,7 @@ app.post('/api/send-otp', async (req, res) => {
   otpStore.set(email, { code: otp, expires: Date.now() + 5 * 60 * 1000 });
 
   try {
-    await transporter.sendMail({
-      from: '"SecureVote Portal" <demo.securevote@gmail.com>',
+    await sendMailHelper({
       to: email,
       subject: 'Your SecureVote Secret Code',
       html: `
@@ -163,8 +193,7 @@ app.post('/api/send-confirmation', async (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email is required' });
 
   try {
-    await transporter.sendMail({
-      from: '"SecureVote Portal" <dreamysoul719@gmail.com>',
+    await sendMailHelper({
       to: email,
       subject: '✅ Your Vote is Confirmed (Blockchain Receipt)',
       html: `
@@ -178,7 +207,7 @@ app.post('/api/send-confirmation', async (req, res) => {
             <h3 style="margin-top: 0; color: #334155; font-size: 16px;">Voter Details</h3>
             <p style="margin: 5px 0; font-size: 14px;"><strong>Name:</strong> ${name}</p>
             <p style="margin: 5px 0; font-size: 14px;"><strong>EPIC ID:</strong> ${epicId}</p>
-            <p style="margin: 5px 0; font-size: 14px;"><strong>Aadhaar:</strong> ${aadhaar}</p>
+            <p style="margin: 5px 0; font-size: 14px;"><strong>Aadhaar:</strong> ${epicId}</p>
           </div>
 
           <div style="background: #eff6ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6;">
@@ -208,8 +237,7 @@ app.post('/api/request-password-reset', async (req, res) => {
   const { name, epicId, aadhaar } = req.body;
 
   try {
-    await transporter.sendMail({
-      from: '"SecureVote Portal" <dreamysoul719@gmail.com>',
+    await sendMailHelper({
       to: 'velvethorizon619432@gmail.com',
       subject: `🚨 Password Reset Request: ${name}`,
       html: `
@@ -223,7 +251,7 @@ app.post('/api/request-password-reset', async (req, res) => {
             <h3 style="margin-top: 0; color: #334155; font-size: 16px;">Requester Details</h3>
             <p style="margin: 5px 0; font-size: 14px;"><strong>Name:</strong> ${name}</p>
             <p style="margin: 5px 0; font-size: 14px;"><strong>EPIC ID:</strong> ${epicId}</p>
-            <p style="margin: 5px 0; font-size: 14px;"><strong>Aadhaar:</strong> ${aadhaar}</p>
+            <p style="margin: 5px 0; font-size: 14px;"><strong>Aadhaar:</strong> ${epicId}</p>
           </div>
 
           <div style="background: #fffbeb; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
