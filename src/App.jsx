@@ -18,7 +18,11 @@ import './App.css';
 // Dynamic configuration for deployment (falls back to localhost)
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3';
 const LOCAL_RPC = import.meta.env.VITE_RPC_URL || 'http://127.0.0.1:8545';
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+let apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+if (apiBase && !apiBase.endsWith('/api') && !apiBase.endsWith('/api/')) {
+  apiBase = apiBase.replace(/\/$/, '') + '/api';
+}
+const API_URL = apiBase;
 
 const VOTER_KEYS = [
   '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
