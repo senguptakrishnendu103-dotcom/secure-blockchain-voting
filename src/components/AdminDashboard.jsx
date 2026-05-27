@@ -19,10 +19,23 @@ export default function AdminDashboard({ onLogout }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [txData, setTxData] = useState(null);
 
-  const getProvider = () => new ethers.JsonRpcProvider(LOCAL_RPC);
-  const getReadContract = () => new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, getProvider());
-  const getAdminContract = () => {
-    const wallet = new ethers.Wallet(ADMIN_KEY, getProvider());
+  const getProvider = () => {
+    if (window.ethereum) {
+      return new ethers.BrowserProvider(window.ethereum);
+    }
+    return new ethers.JsonRpcProvider(LOCAL_RPC);
+  };
+  const getReadContract = () => {
+    return new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, getProvider());
+  };
+  const getAdminContract = async () => {
+    if (window.ethereum) {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      return new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, signer);
+    }
+    const provider = new ethers.JsonRpcProvider(LOCAL_RPC);
+    const wallet = new ethers.Wallet(ADMIN_KEY, provider);
     return new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, wallet);
   };
 
@@ -58,23 +71,51 @@ export default function AdminDashboard({ onLogout }) {
       setSuccess(label);
       fetchData();
     } catch (err) {
-      setTxData({ status: 'failed', error: err.reason || 'Transaction failed.' });
-      setError(err.reason || 'Failed.');
+      setTxData({ status: 'failed', error: err.reason || err.message || 'Transaction failed.' });
+      setError(err.reason || err.message || 'Failed.');
     }
     setTxPending(false);
   };
 
-  const handleAddCandidate = (e) => {
+  const handleAddCandidate = async (e) => {
     e.preventDefault();
     if (!newCandidateName) return;
     const name = newCandidateName;
     setNewCandidateName('');
-    execTx(`"${name}" added!`, () => getAdminContract().addCandidate(name));
+    try {
+      const contract = await getAdminContract();
+      execTx(`"${name}" added!`, () => contract.addCandidate(name));
+    } catch (err) {
+      setError(err.message || 'Failed to connect admin wallet.');
+    }
   };
 
-  const handleStartElection = () => execTx('Election Started!', () => getAdminContract().startElection());
-  const handleEndElection = () => execTx('Election Ended!', () => getAdminContract().endElection());
-  const handleResetElection = () => execTx('Election Reset!', () => getAdminContract().resetElection());
+  const handleStartElection = async () => {
+    try {
+      const contract = await getAdminContract();
+      execTx('Election Started!', () => contract.startElection());
+    } catch (err) {
+      setError(err.message || 'Failed to connect admin wallet.');
+    }
+  };
+
+  const handleEndElection = async () => {
+    try {
+      const contract = await getAdminContract();
+      execTx('Election Ended!', () => contract.endElection());
+    } catch (err) {
+      setError(err.message || 'Failed to connect admin wallet.');
+    }
+  };
+
+  const handleResetElection = async () => {
+    try {
+      const contract = await getAdminContract();
+      execTx('Election Reset!', () => contract.resetElection());
+    } catch (err) {
+      setError(err.message || 'Failed to connect admin wallet.');
+    }
+  };
 
   const totalVotes = candidates.reduce((a, c) => a + c.voteCount, 0);
 
