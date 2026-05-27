@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogOut, Fingerprint, CheckCircle2, AlertCircle, Vote, Wallet } from 'lucide-react';
-import { CONTRACT_ADDRESS, VotingArtifact, API_URL } from '../App';
+import { CONTRACT_ADDRESS, VotingArtifact, API_URL, LOCAL_RPC } from '../App';
 import { db } from '../firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { ResultsDoughnut } from './ResultsChart';
@@ -36,7 +36,11 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
   };
 
   const getReadContract = () => {
-    const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");
+    if (window.ethereum) {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      return new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, provider);
+    }
+    const provider = new ethers.JsonRpcProvider(LOCAL_RPC);
     return new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, provider);
   };
 
