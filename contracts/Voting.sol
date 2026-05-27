@@ -91,6 +91,19 @@ contract Voting {
         emit VotedEvent(_candidateId);
     }
 
+    function voteByAdmin(uint256 _candidateId, address _voter) public onlyAdmin {
+        require(electionStarted, "Election has not started yet.");
+        require(!electionEnded, "Election has ended.");
+        require(!voters[_voter], "Voter has already voted.");
+        require(_candidateId > 0 && _candidateId <= candidatesCount, "Invalid candidate.");
+
+        voters[_voter] = true;
+        voterList.push(_voter);
+        candidates[_candidateId].voteCount++;
+
+        emit VotedEvent(_candidateId);
+    }
+
     function getCandidates() public view returns (Candidate[] memory) {
         Candidate[] memory candArray = new Candidate[](candidatesCount);
         for (uint256 i = 1; i <= candidatesCount; i++) {

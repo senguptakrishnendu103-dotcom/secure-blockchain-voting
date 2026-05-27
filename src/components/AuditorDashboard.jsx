@@ -12,7 +12,7 @@ export default function AuditorDashboard({ onBack }) {
   const [events, setEvents] = useState([]);
 
   const getReadContract = () => {
-    const provider = new ethers.JsonRpcProvider(LOCAL_RPC);
+    const provider = new ethers.JsonRpcProvider(LOCAL_RPC || 'https://ethereum-sepolia-rpc.publicnode.com');
     return new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, provider);
   };
 

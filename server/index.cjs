@@ -4,6 +4,13 @@ const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const nodemailer = require('nodemailer');
+const { ethers } = require('ethers');
+
+// Load environment variables explicitly
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
+// Load Voting smart contract ABI
+const VotingArtifact = require('../src/artifacts/contracts/Voting.sol/Voting.json');
 
 const otpStore = new Map();
 
@@ -45,6 +52,20 @@ const sendMailHelper = async ({ to, subject, html }) => {
       html: html
     });
   }
+};
+
+// Derive voter address deterministically from their unique Voter ID
+const getVoterAddress = (voterId) => {
+  const entropy = ethers.keccak256(ethers.toUtf8Bytes(voterId.toLowerCase() + "secure_voting_salt_2026"));
+  const wallet = new ethers.Wallet(entropy);
+  return wallet.address;
+};
+
+// Connect to the Voting smart contract using the admin wallet (which sponsors gas)
+const getAdminContract = () => {
+  const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL || process.env.VITE_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com');
+  const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+  return new ethers.Contract(process.env.VITE_CONTRACT_ADDRESS || '0xA033b7a4d0A2713254742945381D921F37DDf000', VotingArtifact.abi, wallet);
 };
 
 const app = express();
@@ -170,9 +191,9 @@ app.post('/api/send-otp', async (req, res) => {
   }
 });
 
-// Verify OTP Endpoint
-app.post('/api/verify-otp', (req, res) => {
-  const { email, otp } = req.body;
+// Verify OTP Endpoint (Supports optional gasless vote submission)
+app.post('/api/verify-otp', async (req, res) => {
+  const { email, otp, candidateId, voterId } = req.body;
   const stored = otpStore.get(email);
 
   if (!stored) return res.status(400).json({ error: 'No OTP requested for this email.' });
@@ -181,6 +202,38 @@ app.post('/api/verify-otp', (req, res) => {
     return res.status(400).json({ error: 'OTP expired.' });
   }
   if (stored.code !== otp) return res.status(400).json({ error: 'Invalid secret code.' });
+
+  // If candidateId and voterId are supplied, submit the vote to the blockchain gaslessly
+  if (candidateId !== undefined && voterId) {
+    try {
+      const voterAddress = getVoterAddress(voterId);
+      const contract = getAdminContract();
+      
+      // Submit transaction signed by Admin wallet
+      const tx = await contract.voteByAdmin(candidateId, voterAddress);
+      const receipt = await tx.wait();
+      
+      otpStore.delete(email);
+      return res.json({ 
+        success: true, 
+        txHash: tx.hash,
+        blockNumber: receipt.blockNumber,
+        gasUsed: receipt.gasUsed.toString(),
+        voterAddress: voterAddress
+      });
+    } catch (error) {
+      console.error('Relayed Vote Error:', error);
+      let errorMsg = 'Failed to submit vote to blockchain.';
+      if (error.message.includes('Voter has already voted') || error.message.includes('already cast')) {
+        errorMsg = 'You have already cast a vote.';
+      } else if (error.message.includes('not started')) {
+        errorMsg = 'Election polling has not started yet.';
+      } else if (error.message.includes('ended')) {
+        errorMsg = 'Election polling has concluded.';
+      }
+      return res.status(500).json({ error: errorMsg });
+    }
+  }
 
   otpStore.delete(email);
   res.json({ success: true });

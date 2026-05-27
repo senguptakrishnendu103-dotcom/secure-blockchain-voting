@@ -29,18 +29,17 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
 
-  // Use Browser Provider (MetaMask/Phantom)
-  const getBrowserProvider = () => {
-    if (!window.ethereum) return null;
-    return new ethers.BrowserProvider(window.ethereum);
+  // Derive secure voter address deterministically from their unique Voter ID
+  const getDeterministicVoterAddress = (voterId) => {
+    if (!voterId) return '';
+    const entropy = ethers.keccak256(ethers.toUtf8Bytes(voterId.toLowerCase() + "secure_voting_salt_2026"));
+    const wallet = new ethers.Wallet(entropy);
+    return wallet.address;
   };
 
   const getReadContract = () => {
-    if (window.ethereum) {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      return new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, provider);
-    }
-    const provider = new ethers.JsonRpcProvider(LOCAL_RPC);
+    // Read contract state from standard Sepolia public node (or fallback to local RPC)
+    const provider = new ethers.JsonRpcProvider(LOCAL_RPC || 'https://ethereum-sepolia-rpc.publicnode.com');
     return new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, provider);
   };
 
@@ -50,24 +49,14 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
       const userDoc = await getDoc(doc(db, "users", user.uid));
       const firebaseHasVoted = userDoc.exists() && userDoc.data().hasVoted;
 
-      // Only clear Firebase flag if the election has been genuinely reset (pre-election state)
-      if (firebaseHasVoted) {
-        const contract = getReadContract();
-        const started = await contract.electionStarted();
-        const ended = await contract.electionEnded();
-        // Pre-election state (after reset) = not started AND not ended
-        if (!started && !ended) {
-          try {
-            await updateDoc(doc(db, "users", user.uid), { hasVoted: false });
-          } catch (e) { console.error("Failed to clear Firebase hasVoted:", e); }
-          setHasVoted(false);
-          setVotedFor(null);
-          return;
-        }
-        // Election is active or ended — Firebase lock stands
+      const voterAddress = getDeterministicVoterAddress(user.voterId);
+      const contract = getReadContract();
+      const votedOnChain = await contract.voters(voterAddress);
+
+      if (firebaseHasVoted || votedOnChain) {
         setHasVoted(true);
         if (onVoteComplete) onVoteComplete();
-        setVotedFor("a candidate (verified via database)");
+        setVotedFor(votedOnChain ? "a candidate (verified via blockchain)" : "a candidate (verified via database)");
       } else {
         setHasVoted(false);
         setVotedFor(null);
@@ -79,9 +68,13 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
 
   useEffect(() => {
     fetchData();
-    checkFirebaseVoteStatus();
-    connectWallet(); // Try to connect wallet on load
     
+    if (user && user.voterId) {
+      const addr = getDeterministicVoterAddress(user.voterId);
+      setWalletAddress(addr);
+      checkFirebaseVoteStatus();
+    }
+
     const contract = getReadContract();
     contract.on("VotedEvent", () => fetchData());
     contract.on("ElectionStartedEvent", () => fetchData());
@@ -98,104 +91,19 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
       fetchData();
     });
 
-    // Handle MetaMask account switches dynamically
-    let handleAccountsChanged;
-    if (window.ethereum) {
-      handleAccountsChanged = async (accounts) => {
-        if (accounts.length > 0) {
-          const newAddress = accounts[0];
-          setWalletAddress(newAddress);
-          
-          try {
-            // Firebase is the identity-level lock — check it first
-            const userDoc = await getDoc(doc(db, "users", user.uid));
-            const firebaseHasVoted = userDoc.exists() && userDoc.data().hasVoted;
-            
-            if (firebaseHasVoted) {
-              // Only clear if election was genuinely reset
-              const started = await contract.electionStarted();
-              const ended = await contract.electionEnded();
-              if (!started && !ended) {
-                try {
-                  await updateDoc(doc(db, "users", user.uid), { hasVoted: false });
-                } catch (e) { console.error("Failed to clear Firebase hasVoted:", e); }
-                setHasVoted(false);
-                setVotedFor(null);
-              } else {
-                // Identity already voted — block regardless of wallet
-                setHasVoted(true);
-                if (onVoteComplete) onVoteComplete();
-                setVotedFor("a candidate (verified via database)");
-              }
-            } else {
-              // Check on-chain for this specific wallet
-              const votedOnChain = await contract.voters(newAddress);
-              setHasVoted(votedOnChain);
-              if (votedOnChain && onVoteComplete) onVoteComplete();
-              setVotedFor(votedOnChain ? "a candidate (verified via blockchain)" : null);
-            }
-          } catch (e) {
-            console.error("Error updating details on account change:", e);
-          }
-        } else {
-          setWalletAddress('');
-          setHasVoted(false);
-          setVotedFor(null);
-        }
-      };
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-    }
-
     return () => { 
       contract.removeAllListeners(); 
-      if (window.ethereum && handleAccountsChanged) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-      }
     };
   }, [user]);
 
   const connectWallet = async () => {
-    if (!window.ethereum) return setError("Please install a blockchain wallet like MetaMask.");
-    try {
-      const provider = getBrowserProvider();
-      const accounts = await provider.send("eth_requestAccounts", []);
-      const activeAddress = accounts[0];
-      setWalletAddress(activeAddress);
-      
-      const contract = getReadContract();
-      
-      // Firebase is the identity-level lock — one person, one vote
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      const firebaseHasVoted = userDoc.exists() && userDoc.data().hasVoted;
-      
-      if (firebaseHasVoted) {
-        // Only clear if election was genuinely reset (pre-election state)
-        const started = await contract.electionStarted();
-        const ended = await contract.electionEnded();
-        if (!started && !ended) {
-          try {
-            await updateDoc(doc(db, "users", user.uid), { hasVoted: false });
-          } catch (e) { console.error("Failed to clear stale Firebase hasVoted:", e); }
-          setHasVoted(false);
-          setVotedFor(null);
-        } else {
-          // Identity already voted — block regardless of which wallet is connected
-          setHasVoted(true);
-          if (onVoteComplete) onVoteComplete();
-          setVotedFor("a candidate (verified via database)");
-        }
-      } else {
-        // Check on-chain for this specific wallet address
-        const votedOnChain = await contract.voters(activeAddress);
-        setHasVoted(votedOnChain);
-        if (votedOnChain && onVoteComplete) onVoteComplete();
-        setVotedFor(votedOnChain ? "a candidate (verified via blockchain)" : null);
-      }
-    } catch (err) {
-      console.error(err);
-      setError("Failed to connect wallet.");
+    if (user && user.voterId) {
+      const addr = getDeterministicVoterAddress(user.voterId);
+      setWalletAddress(addr);
     }
   };
+
+
 
   const fetchData = async () => {
     try {
@@ -259,14 +167,61 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
       const res = await fetch(`${API_URL}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email, otp: otpInput })
+        body: JSON.stringify({ 
+          email: user.email, 
+          otp: otpInput,
+          candidateId: selectedCandidate.id,
+          voterId: user.voterId
+        })
       });
       const data = await res.json();
       if (data.success) {
         setShowOtpModal(false);
         setOtpInput('');
-        // Proceed to metamask transaction
-        await castVote(selectedCandidate.id, selectedCandidate.name);
+        
+        // Show success modal using the transaction hash returned from the backend
+        setTxPending(true);
+        setTxData({ status: 'pending', hash: data.txHash });
+        setModalOpen(true);
+        
+        setTimeout(async () => {
+          setTxData({ 
+            status: 'success', 
+            hash: data.txHash, 
+            blockNumber: data.blockNumber || 'Pending', 
+            gasUsed: data.gasUsed || '0' 
+          });
+          setHasVoted(true);
+          if (onVoteComplete) onVoteComplete();
+          setVotedFor(selectedCandidate.name);
+          
+          // Lock the user's Firebase Identity so they cannot vote again
+          try {
+            await updateDoc(doc(db, "users", user.uid), { hasVoted: true });
+          } catch (e) {
+            console.error("Failed to lock Firebase identity:", e);
+          }
+
+          // Trigger the Confirmation Email Receipt
+          try {
+            await fetch(`${API_URL}/send-confirmation`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: user.email,
+                name: user.name,
+                epicId: user.voterId,
+                aadhaar: user.aadhaar,
+                txHash: data.txHash
+              })
+            });
+          } catch (e) {
+            console.error("Failed to send confirmation email:", e);
+          }
+
+          setTxPending(false);
+          fetchData();
+        }, 1000);
       } else {
         setOtpError(data.error || 'Invalid OTP.');
       }
@@ -274,77 +229,6 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
       setOtpError('Server error while verifying OTP.');
     }
     setVerifyingOtp(false);
-  };
-
-  const castVote = async (candidateId, candidateName) => {
-    if (!walletAddress) await connectWallet();
-    
-    // Hard Firebase identity check — final guard before blockchain transaction
-    if (user && user.uid) {
-      try {
-        const userDoc = await getDoc(doc(db, "users", user.uid));
-        if (userDoc.exists() && userDoc.data().hasVoted) {
-          setHasVoted(true);
-          setVotedFor("a candidate (verified via database)");
-          return setError("Your identity has already cast a vote. Switching wallets is not allowed.");
-        }
-      } catch (e) { console.error("Firebase check failed:", e); }
-    }
-    
-    if (hasVoted) return setError("You have already cast a vote.");
-    if (!electionStarted) return setError("Election polling hasn't started yet.");
-    if (electionEnded) return setError("Election polling has concluded.");
-
-    setTxPending(true); setError('');
-    setTxData({ status: 'pending', hash: null }); setModalOpen(true);
-
-    try {
-      const provider = getBrowserProvider();
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, signer);
-      
-      // THIS WILL TRIGGER THE WALLET POPUP
-      const tx = await contract.vote(candidateId);
-      
-      setTxData({ status: 'pending', hash: tx.hash });
-      const receipt = await tx.wait();
-      
-      setTxData({ status: 'success', hash: tx.hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed.toString() });
-      setHasVoted(true);
-      if (onVoteComplete) onVoteComplete();
-      setVotedFor(candidateName);
-      
-      // 1. Lock the user's Firebase Identity so they cannot vote again with a different wallet
-      try {
-        await updateDoc(doc(db, "users", user.uid), { hasVoted: true });
-      } catch (e) {
-        console.error("Failed to lock Firebase identity:", e);
-      }
-
-      // 2. Trigger the Confirmation Email Receipt
-      try {
-        await fetch(`${API_URL}/send-confirmation`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: user.email,
-            name: user.name,
-            epicId: user.voterId,
-            aadhaar: user.aadhaar,
-            txHash: tx.hash
-          })
-        });
-      } catch (e) {
-        console.error("Failed to send confirmation email:", e);
-      }
-
-      fetchData();
-    } catch (err) {
-      console.error(err);
-      setTxData({ status: 'failed', error: err.reason || 'Transaction rejected or failed.' });
-      setError(err.reason || 'Vote failed.');
-    }
-    setTxPending(false);
   };
 
   const totalVotes = candidates.reduce((a, c) => a + c.voteCount, 0);
