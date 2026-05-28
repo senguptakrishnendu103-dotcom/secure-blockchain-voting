@@ -5,6 +5,8 @@ import { LogOut, Plus, Play, Square, RotateCcw, ShieldAlert, Fingerprint, Refres
 import { CONTRACT_ADDRESS, LOCAL_RPC, ADMIN_KEY, VotingArtifact } from '../App';
 import { ResultsDoughnut, ResultsBarChart } from './ResultsChart';
 import TransactionModal from './TransactionModal';
+import { db } from '../firebase';
+import { collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 
 export default function AdminDashboard({ onLogout }) {
   const [candidates, setCandidates] = useState([]);
@@ -114,7 +116,24 @@ export default function AdminDashboard({ onLogout }) {
 
   const handleResetElection = async () => {
     try {
+      setError('');
+      setSuccess('');
       const contract = await getAdminContract();
+
+      // Proactively reset Firebase voter lock statuses
+      try {
+        const querySnapshot = await getDocs(collection(db, "users"));
+        const batch = writeBatch(db);
+        querySnapshot.forEach((userDoc) => {
+          if (userDoc.data().hasVoted) {
+            batch.update(doc(db, "users", userDoc.id), { hasVoted: false });
+          }
+        });
+        await batch.commit();
+      } catch (e) {
+        console.error("Failed to clear voter statuses in Firestore:", e);
+      }
+
       execTx('Election Reset!', () => contract.resetElection());
     } catch (err) {
       setError(err.message || 'Failed to connect admin wallet.');

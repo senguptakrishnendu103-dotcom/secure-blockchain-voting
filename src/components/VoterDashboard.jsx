@@ -69,9 +69,17 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
       const votedOnChain = await contract.voters(voterAddress);
 
       if (firebaseHasVoted || votedOnChain) {
-        setHasVoted(true);
-        if (onVoteComplete) onVoteComplete();
-        setVotedFor(votedOnChain ? "a candidate (verified via blockchain)" : "a candidate (verified via database)");
+        if (!votedOnChain && firebaseHasVoted) {
+          // Self-healing: Blockchain says voter has not voted, but Firebase says they have.
+          // This happens when the election is reset or redeployed. Sync Firebase back to false.
+          await updateDoc(doc(db, "users", user.uid), { hasVoted: false });
+          setHasVoted(false);
+          setVotedFor(null);
+        } else {
+          setHasVoted(true);
+          if (onVoteComplete) onVoteComplete();
+          setVotedFor(votedOnChain ? "a candidate (verified via blockchain)" : "a candidate (verified via database)");
+        }
       } else {
         setHasVoted(false);
         setVotedFor(null);
@@ -179,16 +187,22 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
       setScanProgress(progress);
       
       if (currentStageIndex < stages.length && progress >= stages[currentStageIndex].prg) {
-        setScanLog(prev => [...prev, stages[currentStageIndex].log]);
+        const stageLog = stages[currentStageIndex].log;
+        setScanLog(prev => [...prev, stageLog]);
         currentStageIndex++;
       }
       
       if (progress >= 100) {
         clearInterval(interval);
         setTimeout(async () => {
-          stopCamera();
-          setShowFaceModal(false);
-          await sendOtpAndOpenModal();
+          try {
+            stopCamera();
+            setShowFaceModal(false);
+            await sendOtpAndOpenModal();
+          } catch (err) {
+            console.error('Post-scan error:', err);
+            setError('An error occurred after biometric scan. Please try again.');
+          }
         }, 1200);
       }
     }, 120);
@@ -196,11 +210,17 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
 
   const sendOtpAndOpenModal = async () => {
     setSendingOtp(true);
+    const voterEmail = user?.email;
+    if (!voterEmail) {
+      setError('No email found for this account. Cannot send OTP.');
+      setSendingOtp(false);
+      return;
+    }
     try {
       const res = await fetch(`${API_URL}/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email })
+        body: JSON.stringify({ email: voterEmail })
       });
       const data = await res.json();
       if (data.success) {
@@ -209,6 +229,7 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
         setError(data.error || 'Failed to send OTP.');
       }
     } catch (err) {
+      console.error('OTP send error:', err);
       setError('Server error while sending OTP.');
     }
     setSendingOtp(false);
@@ -222,9 +243,17 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
       try {
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (userDoc.exists() && userDoc.data().hasVoted) {
-          setHasVoted(true);
-          setVotedFor("a candidate (verified via database)");
-          return setError("Your identity has already cast a vote. Switching wallets is not allowed.");
+          const voterAddress = getDeterministicVoterAddress(user.voterId);
+          const contract = getReadContract();
+          const votedOnChain = await contract.voters(voterAddress);
+          if (votedOnChain) {
+            setHasVoted(true);
+            setVotedFor("a candidate (verified via blockchain)");
+            return setError("Your identity has already cast a vote. Switching wallets is not allowed.");
+          } else {
+            // Self-healing: Blockchain says voter has not voted, but Firebase says they have.
+            await updateDoc(doc(db, "users", user.uid), { hasVoted: false });
+          }
         }
       } catch (e) { console.error("Firebase check failed:", e); }
     }
@@ -388,7 +417,7 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-slate-900 border border-blue-500/30 p-6 rounded-xl max-w-sm w-full shadow-2xl">
               <h3 className="text-xl font-bold mb-2">2FA Verification</h3>
-              <p className="text-slate-400 text-sm mb-4">A 6-digit secret code has been sent to <strong>{user.email}</strong>. Enter it below to cast your vote for {selectedCandidate?.name}.</p>
+              <p className="text-slate-400 text-sm mb-4">A 6-digit secret code has been sent to <strong>{user?.email || 'your email'}</strong>. Enter it below to cast your vote for {selectedCandidate?.name || 'your candidate'}.</p>
               
               <input type="text" maxLength={6} value={otpInput} onChange={e => setOtpInput(e.target.value)} placeholder="000000" className="glass-input w-full text-center text-2xl tracking-[0.5em] font-mono mb-4" />
               
@@ -448,11 +477,11 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
         <div className="glass-panel p-4 mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-lg uppercase">
-              {user.name[0]}
+              {(user?.name || 'V')[0]}
             </div>
             <div>
-              <p className="font-medium">{user.name}</p>
-              <p className="text-xs text-slate-400">Voter ID: {user.voterId} • Aadhaar: {user.aadhaar}</p>
+              <p className="font-medium">{user?.name || 'Voter'}</p>
+              <p className="text-xs text-slate-400">Voter ID: {user?.voterId || 'N/A'} • Aadhaar: {user?.aadhaar || 'N/A'}</p>
             </div>
           </div>
           <div>

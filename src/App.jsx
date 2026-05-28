@@ -8,6 +8,7 @@ import RegisterPage from './components/RegisterPage';
 import AdminDashboard from './components/AdminDashboard';
 import VoterDashboard from './components/VoterDashboard';
 import AuditorDashboard from './components/AuditorDashboard';
+import ErrorBoundary from './components/ErrorBoundary';
 import SupportChat from './components/SupportChat';
 import LanguageGateway from './components/LanguageGateway';
 import LanguageSwitcher from './components/LanguageSwitcher';
@@ -308,7 +309,9 @@ function App() {
         )}
 
         {currentPage === 'voter' && (
-          <VoterDashboard key="voter" user={currentUser} onLogout={handleLogout} onVoteComplete={() => setHasVotedGlobal(true)} />
+          <ErrorBoundary>
+            <VoterDashboard key="voter" user={currentUser} onLogout={handleLogout} onVoteComplete={() => setHasVotedGlobal(true)} />
+          </ErrorBoundary>
         )}
 
         {currentPage === 'auditor' && (
