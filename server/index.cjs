@@ -63,9 +63,13 @@ const getVoterAddress = (voterId) => {
 
 // Connect to the Voting smart contract using the admin wallet (which sponsors gas)
 const getAdminContract = () => {
-  const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL || process.env.VITE_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com');
-  const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-  return new ethers.Contract(process.env.VITE_CONTRACT_ADDRESS || '0xA033b7a4d0A2713254742945381D921F37DDf000', VotingArtifact.abi, wallet);
+  const rpcUrl = (process.env.SEPOLIA_RPC_URL || process.env.VITE_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com').trim();
+  const privateKey = process.env.PRIVATE_KEY.trim();
+  const contractAddress = (process.env.VITE_CONTRACT_ADDRESS || '0xA033b7a4d0A2713254742945381D921F37DDf000').trim();
+
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  const wallet = new ethers.Wallet(privateKey, provider);
+  return new ethers.Contract(contractAddress, VotingArtifact.abi, wallet);
 };
 
 const app = express();
