@@ -27,9 +27,32 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Helper function to send email via Resend API (HTTP) if key is set, otherwise fallback to SMTP
+// Helper function to send email via Brevo or Resend API (HTTP) if key is set, otherwise fallback to SMTP
 const sendMailHelper = async ({ to, subject, html }) => {
-  if (process.env.RESEND_API_KEY) {
+  if (process.env.BREVO_API_KEY) {
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': process.env.BREVO_API_KEY,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: {
+          name: 'SecureVote Portal',
+          email: process.env.EMAIL_USER || 'dreamysoul719@gmail.com'
+        },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: html
+      })
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Brevo API Error: ${errText}`);
+    }
+    return { success: true };
+  } else if (process.env.RESEND_API_KEY) {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
