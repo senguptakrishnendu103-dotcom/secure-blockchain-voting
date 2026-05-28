@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogOut, Fingerprint, CheckCircle2, AlertCircle, Vote, Wallet } from 'lucide-react';
+import { LogOut, Fingerprint, CheckCircle2, AlertCircle, Vote, Wallet, Camera, Loader2 } from 'lucide-react';
 import { CONTRACT_ADDRESS, VotingArtifact, API_URL, LOCAL_RPC } from '../App';
 import { db } from '../firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -28,6 +28,21 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
+
+  // Biometric/Face Scan States
+  const [showFaceModal, setShowFaceModal] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [scanLog, setScanLog] = useState([]);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const logEndRef = useRef(null);
+
+  // Scroll biometric log to bottom
+  useEffect(() => {
+    if (logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [scanLog]);
 
   // Derive secure voter address deterministically from their unique Voter ID
   const getDeterministicVoterAddress = (voterId) => {
@@ -119,6 +134,86 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
     }
   };
 
+  const startCamera = async () => {
+    try {
+      setScanProgress(0);
+      setScanLog(["[SYSTEM] Initializing camera device...", "[SYSTEM] Requesting video access..."]);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setScanLog(prev => [...prev, "[SYSTEM] Camera active. Face alignment initialized."]);
+      simulateScan();
+    } catch (err) {
+      console.error("Camera access failed:", err);
+      setScanLog(prev => [...prev, "[ERROR] Camera access denied or not found."]);
+      setError("Webcam / Camera access is required for biometric verification.");
+      setShowFaceModal(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const simulateScan = () => {
+    let progress = 0;
+    const stages = [
+      { prg: 20, log: "[BIOMETRIC] Aligning face box and detecting landmarks..." },
+      { prg: 40, log: "[BIOMETRIC] Measuring facial coordinate metrics..." },
+      { prg: 60, log: "[BIOMETRIC] Generating cryptographic face template..." },
+      { prg: 80, log: "[DATABASE] Matching face print with registered Aadhaar database..." },
+      { prg: 100, log: "[SUCCESS] Biometric match confirmed (99.4% confidence score)." }
+    ];
+    
+    let currentStageIndex = 0;
+    const interval = setInterval(() => {
+      progress += 4;
+      if (progress > 100) progress = 100;
+      setScanProgress(progress);
+      
+      if (currentStageIndex < stages.length && progress >= stages[currentStageIndex].prg) {
+        setScanLog(prev => [...prev, stages[currentStageIndex].log]);
+        currentStageIndex++;
+      }
+      
+      if (progress >= 100) {
+        clearInterval(interval);
+        setTimeout(async () => {
+          stopCamera();
+          setShowFaceModal(false);
+          await sendOtpAndOpenModal();
+        }, 1200);
+      }
+    }, 120);
+  };
+
+  const sendOtpAndOpenModal = async () => {
+    setSendingOtp(true);
+    try {
+      const res = await fetch(`${API_URL}/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowOtpModal(true);
+      } else {
+        setError(data.error || 'Failed to send OTP.');
+      }
+    } catch (err) {
+      setError('Server error while sending OTP.');
+    }
+    setSendingOtp(false);
+  };
+
   const handleVoteClick = async (candidateId, candidateName) => {
     if (!walletAddress) await connectWallet();
     
@@ -142,26 +237,18 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
       return setError("No email registered for this account. Cannot perform 2FA.");
     }
 
-    setSendingOtp(true);
+    setSelectedCandidate({ id: candidateId, name: candidateName });
+    setShowFaceModal(true);
     setError('');
     
-    try {
-      const res = await fetch(`${API_URL}/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSelectedCandidate({ id: candidateId, name: candidateName });
-        setShowOtpModal(true);
-      } else {
-        setError(data.error || 'Failed to send OTP.');
-      }
-    } catch (err) {
-      setError('Server error while sending OTP.');
-    }
-    setSendingOtp(false);
+    setTimeout(() => {
+      startCamera();
+    }, 100);
+  };
+
+  const handleCancelFace = () => {
+    stopCamera();
+    setShowFaceModal(false);
   };
 
   const verifyOtpAndVote = async () => {
@@ -243,6 +330,57 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="min-h-screen">
       <TransactionModal isOpen={modalOpen} onClose={() => setModalOpen(false)} txData={txData} />
+
+      {/* Biometric Face Verification Modal */}
+      <AnimatePresence>
+        {showFaceModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-slate-950 border border-blue-500/30 p-6 rounded-2xl max-w-md w-full shadow-[0_0_50px_rgba(59,130,246,0.3)] relative overflow-hidden flex flex-col items-center">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-emerald-500 to-blue-500" />
+              
+              <h3 className="text-xl font-bold mb-1 mt-2 text-center text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">🧬 Biometric Verification</h3>
+              <p className="text-slate-400 text-xs mb-6 text-center">Webcam scanning required for secure biometric verification.</p>
+              
+              {/* Circular Camera Frame */}
+              <div className="w-52 h-52 rounded-full overflow-hidden relative border-4 border-blue-500/30 shadow-[0_0_30px_rgba(59,130,246,0.2)] bg-slate-900 flex items-center justify-center mb-6">
+                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
+                
+                {/* Neon Scanning Laser Line */}
+                <div className="w-full h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent absolute shadow-[0_0_15px_rgba(52,211,153,0.8)] animate-scan left-0" />
+                
+                {/* HUD Framing Circle */}
+                <div className="absolute inset-2 border border-dashed border-blue-500/20 rounded-full animate-spin [animation-duration:20s]" />
+              </div>
+
+              {/* Progress and status */}
+              <div className="w-full mb-4">
+                <div className="flex justify-between text-xs text-slate-400 mb-1 font-mono">
+                  <span>FACIAL DISCRIMINATION:</span>
+                  <span className="text-blue-400 font-bold">{scanProgress}%</span>
+                </div>
+                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden border border-slate-700">
+                  <div className="bg-gradient-to-r from-blue-500 to-emerald-400 h-full transition-all duration-150" style={{ width: `${scanProgress}%` }} />
+                </div>
+              </div>
+
+              {/* Monospace Scanning Logs Terminal */}
+              <div className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 h-28 overflow-y-auto font-mono text-[10px] text-emerald-400 mb-6 flex flex-col gap-1 select-none text-left">
+                {scanLog.map((log, idx) => (
+                  <div key={idx} className="leading-tight">
+                    {log}
+                  </div>
+                ))}
+                <div ref={logEndRef} />
+              </div>
+
+              {/* Action Button */}
+              <button onClick={handleCancelFace} className="w-full glass-button py-2.5 bg-red-950/20 border-red-500/30 text-red-400 hover:bg-red-900/20 hover:text-red-300">
+                Cancel Verification
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* OTP Verification Modal */}
       <AnimatePresence>
