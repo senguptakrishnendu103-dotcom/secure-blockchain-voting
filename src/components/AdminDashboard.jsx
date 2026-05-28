@@ -57,7 +57,11 @@ export default function AdminDashboard({ onLogout }) {
       setCandidates(arr.map(c => ({ id: c.id.toString(), name: c.name, voteCount: Number(c.voteCount) })));
       setElectionStarted(await contract.electionStarted());
       setElectionEnded(await contract.electionEnded());
-    } catch (e) { console.error(e); }
+      setError(''); // Clear any previous errors
+    } catch (e) {
+      console.error("AdminDashboard Fetch Error:", e);
+      setError(`Blockchain Connection Error: Failed to fetch candidates from ${CONTRACT_ADDRESS}. Please ensure your local Hardhat node is running, or verify your RPC URL and contract address in the .env file.`);
+    }
   };
 
   const execTx = async (label, fn) => {

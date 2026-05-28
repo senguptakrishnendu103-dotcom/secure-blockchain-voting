@@ -112,7 +112,11 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
       setCandidates(arr.map(c => ({ id: c.id.toString(), name: c.name, voteCount: Number(c.voteCount) })));
       setElectionStarted(await contract.electionStarted());
       setElectionEnded(await contract.electionEnded());
-    } catch (e) { console.error(e); }
+      setError(''); // Clear any previous loading errors
+    } catch (e) {
+      console.error("VoterDashboard Fetch Error:", e);
+      setError(`Blockchain Connection Error: Failed to fetch candidates from ${CONTRACT_ADDRESS}. Please ensure your local Hardhat node is running, or verify your RPC URL and contract address in the .env file.`);
+    }
   };
 
   const handleVoteClick = async (candidateId, candidateName) => {

@@ -10,9 +10,10 @@ export default function AuditorDashboard({ onBack }) {
   const [electionStarted, setElectionStarted] = useState(false);
   const [electionEnded, setElectionEnded] = useState(false);
   const [events, setEvents] = useState([]);
+  const [error, setError] = useState('');
 
   const getReadContract = () => {
-    const provider = new ethers.JsonRpcProvider(LOCAL_RPC || 'https://ethereum-sepolia-rpc.publicnode.com');
+    const provider = new ethers.JsonRpcProvider(LOCAL_RPC || 'https://eth-sepolia.g.alchemy.com/v2/fBbQ3ypjUnzMoKyeeF57D');
     return new ethers.Contract(CONTRACT_ADDRESS, VotingArtifact.abi, provider);
   };
 
@@ -52,7 +53,11 @@ export default function AuditorDashboard({ onBack }) {
       setCandidates(arr.map(c => ({ id: c.id.toString(), name: c.name, voteCount: Number(c.voteCount) })));
       setElectionStarted(await contract.electionStarted());
       setElectionEnded(await contract.electionEnded());
-    } catch (e) { console.error("Failed to fetch blockchain data:", e); }
+      setError(''); // Clear errors
+    } catch (e) {
+      console.error("AuditorDashboard Fetch Error:", e);
+      setError(`Blockchain Connection Error: Failed to fetch candidates from ${CONTRACT_ADDRESS}. Please ensure your local Hardhat node is running, or verify your RPC URL and contract address in the .env file.`);
+    }
   };
 
   const totalVotes = candidates.reduce((a, c) => a + c.voteCount, 0);
@@ -89,6 +94,8 @@ export default function AuditorDashboard({ onBack }) {
              </div>
           </div>
         </div>
+
+        {error && <div className="glass-panel border-red-500/30 bg-red-500/10 p-3 mb-4 text-red-200 text-sm text-center">{error}</div>}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column: Charts */}

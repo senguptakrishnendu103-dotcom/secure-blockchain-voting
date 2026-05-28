@@ -17,7 +17,8 @@ import './App.css';
 
 // Dynamic configuration for deployment (falls back to localhost)
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3';
-const LOCAL_RPC = import.meta.env.VITE_RPC_URL || 'http://127.0.0.1:8545';
+const IS_SEPOLIA = CONTRACT_ADDRESS.toLowerCase() !== '0x5fbdb2315678afecb367f032d93f642f64180aa3';
+const LOCAL_RPC = import.meta.env.VITE_RPC_URL || (IS_SEPOLIA ? 'https://eth-sepolia.g.alchemy.com/v2/fBbQ3ypjUnzMoKyeeF57D' : 'http://127.0.0.1:8545');
 let apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 if (apiBase && !apiBase.endsWith('/api') && !apiBase.endsWith('/api/')) {
   apiBase = apiBase.replace(/\/$/, '') + '/api';
