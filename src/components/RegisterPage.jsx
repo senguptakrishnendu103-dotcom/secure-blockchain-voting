@@ -115,7 +115,7 @@ export default function RegisterPage({ onRegister, onBack }) {
   const startBiometricRegistration = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+        video: { facingMode: 'user' }
       });
       streamRef.current = stream;
       if (videoRef.current) {
@@ -125,12 +125,13 @@ export default function RegisterPage({ onRegister, onBack }) {
       setScanProgress(20);
 
       // Load models from CDN
-      setScanLog(prev => [...prev, "[SYSTEM] Fetching neural network models from CDN..."]);
+      setScanLog(prev => [...prev, "[SYSTEM] Fetching mobile-optimized neural network models..."]);
       const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
 
-      await window.faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+      // Load Tiny Face Detector instead of SSD MobileNet for 10x faster performance on mobile
+      await window.faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
       setScanProgress(45);
-      setScanLog(prev => [...prev, "[SYSTEM] SSD MobileNet V1 model loaded successfully."]);
+      setScanLog(prev => [...prev, "[SYSTEM] Tiny Face Detector model loaded successfully."]);
 
       await window.faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
       setScanProgress(70);
@@ -141,15 +142,20 @@ export default function RegisterPage({ onRegister, onBack }) {
       setScanLog(prev => [...prev, "[SYSTEM] Face Recognition model loaded successfully."]);
 
       setScanLog(prev => [...prev, "[BIOMETRIC] Aligning face and extracting landmark descriptors..."]);
-      setScanLog(prev => [...prev, "💡 Tip: Remove hats, ensure good lighting. Glasses are fully supported."]);
+      setScanLog(prev => [...prev, "💡 Tip: Keep steady, align your face in the center under good lighting."]);
 
       let faceDetected = false;
       let attempts = 0;
-      const maxAttempts = 60; // Check for ~15 seconds
+      const maxAttempts = 80; // Allow ~20 seconds of scanning on mobile
 
       const detectInterval = setInterval(async () => {
         if (!streamRef.current || faceDetected) {
           clearInterval(detectInterval);
+          return;
+        }
+
+        // Ensure video is playing and has loaded frames before running detection
+        if (!videoRef.current || videoRef.current.readyState < 2) {
           return;
         }
 
@@ -164,9 +170,10 @@ export default function RegisterPage({ onRegister, onBack }) {
         }
 
         try {
+          // Use TinyFaceDetector with inputSize 224 for real-time mobile performance
           const detection = await window.faceapi.detectSingleFace(
             videoRef.current,
-            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+            new window.faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 })
           )
           .withFaceLandmarks()
           .withFaceDescriptor();
@@ -190,7 +197,7 @@ export default function RegisterPage({ onRegister, onBack }) {
             }, 1200);
           } else {
             if (attempts % 4 === 0) {
-              setScanLog(prev => [...prev, "[BIOMETRIC] Searching for face... Frame alignment in progress."]);
+              setScanLog(prev => [...prev, "[BIOMETRIC] Searching for face... Keep face centered and steady."]);
             }
           }
         } catch (err) {
