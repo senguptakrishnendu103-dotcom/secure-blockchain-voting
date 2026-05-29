@@ -154,7 +154,10 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
         videoRef.current.srcObject = stream;
       }
       setScanLog(prev => [...prev, "[SYSTEM] Camera active. Face alignment initialized."]);
-      simulateScan();
+      
+      setTimeout(() => {
+        startRealBiometricVerification();
+      }, 300);
     } catch (err) {
       console.error("Camera access failed:", err);
       setScanLog(prev => [...prev, "[ERROR] Camera access denied or not found."]);
@@ -170,42 +173,137 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
     }
   };
 
-  const simulateScan = () => {
-    let progress = 0;
-    const stages = [
-      { prg: 20, log: "[BIOMETRIC] Aligning face box and detecting landmarks..." },
-      { prg: 40, log: "[BIOMETRIC] Measuring facial coordinate metrics..." },
-      { prg: 60, log: "[BIOMETRIC] Generating cryptographic face template..." },
-      { prg: 80, log: "[DATABASE] Matching face print with registered Aadhaar database..." },
-      { prg: 100, log: "[SUCCESS] Biometric match confirmed (99.4% confidence score)." }
-    ];
-    
-    let currentStageIndex = 0;
-    const interval = setInterval(() => {
-      progress += 4;
-      if (progress > 100) progress = 100;
-      setScanProgress(progress);
-      
-      if (currentStageIndex < stages.length && progress >= stages[currentStageIndex].prg) {
-        const stageLog = stages[currentStageIndex].log;
-        setScanLog(prev => [...prev, stageLog]);
-        currentStageIndex++;
+  const startRealBiometricVerification = async () => {
+    try {
+      setScanProgress(20);
+
+      // Check if face-api library is available
+      if (!window.faceapi) {
+        throw new Error("Biometric engine is still loading. Please check your network connection.");
       }
+
+      // Load models from CDN
+      setScanLog(prev => [...prev, "[SYSTEM] Loading neural network models from CDN..."]);
+      const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+
+      await window.faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+      setScanProgress(45);
+      setScanLog(prev => [...prev, "[SYSTEM] SSD MobileNet V1 model loaded successfully."]);
+
+      await window.faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+      setScanProgress(70);
+      setScanLog(prev => [...prev, "[SYSTEM] Face Landmark 68 model loaded successfully."]);
+
+      await window.faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+      setScanProgress(85);
+      setScanLog(prev => [...prev, "[SYSTEM] Face Recognition model loaded successfully."]);
+
+      setScanLog(prev => [...prev, "[BIOMETRIC] Fetching registered profile descriptor..."]);
       
-      if (progress >= 100) {
-        clearInterval(interval);
-        setTimeout(async () => {
-          try {
-            stopCamera();
-            setShowFaceModal(false);
-            await sendOtpAndOpenModal();
-          } catch (err) {
-            console.error('Post-scan error:', err);
-            setError('An error occurred after biometric scan. Please try again.');
+      const registeredDescriptor = user?.faceDescriptor;
+      if (!registeredDescriptor || !Array.isArray(registeredDescriptor) || registeredDescriptor.length !== 128) {
+        setScanLog(prev => [
+          ...prev, 
+          "[ERROR] No registered biometric profile found for this Voter ID.",
+          "[SYSTEM] Verification aborted. Face scan is REQUIRED during registration."
+        ]);
+        stopCamera();
+        setError("Biometric Verification Failed: No registered face profile found. Votes cannot be casted.");
+        setTimeout(() => {
+          setShowFaceModal(false);
+        }, 3000);
+        return;
+      }
+
+      setScanLog(prev => [...prev, "[BIOMETRIC] Registered profile loaded successfully."]);
+      setScanLog(prev => [...prev, "[BIOMETRIC] Aligning face and comparing live print..."]);
+      setScanLog(prev => [...prev, "💡 Tip: Keep a neutral expression. Glasses are fully supported!"]);
+
+      let faceVerified = false;
+      let attempts = 0;
+      const maxAttempts = 60; // Check for ~15 seconds
+
+      const detectInterval = setInterval(async () => {
+        if (!streamRef.current || faceVerified) {
+          clearInterval(detectInterval);
+          return;
+        }
+
+        attempts++;
+        if (attempts > maxAttempts) {
+          clearInterval(detectInterval);
+          stopCamera();
+          setShowFaceModal(false);
+          setError("Biometric Verification Timeout: Face match could not be confirmed. Please position yourself in a well-lit area and try again.");
+          return;
+        }
+
+        try {
+          const detection = await window.faceapi.detectSingleFace(
+            videoRef.current,
+            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+          )
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+
+          if (detection) {
+            const liveDescriptor = detection.descriptor;
+            // Compare descriptors
+            const distance = window.faceapi.euclideanDistance(liveDescriptor, registeredDescriptor);
+            
+            // Euclidean distance threshold: standard is 0.6. Let's allow slightly higher tolerance (e.g. 0.62) to accommodate removing glasses etc.
+            const threshold = 0.62;
+            const confidence = Math.max(0, (1 - (distance / threshold)) * 100);
+
+            if (distance < threshold) {
+              faceVerified = true;
+              clearInterval(detectInterval);
+              setScanProgress(100);
+              setScanLog(prev => [
+                ...prev,
+                `[BIOMETRIC] Euclidean Distance: ${distance.toFixed(4)}`,
+                `[SUCCESS] Biometric match confirmed! (Confidence: ${confidence.toFixed(1)}%)`,
+                "[SYSTEM] Initiating 2FA authentication..."
+              ]);
+
+              setTimeout(async () => {
+                try {
+                  stopCamera();
+                  setShowFaceModal(false);
+                  await sendOtpAndOpenModal();
+                } catch (err) {
+                  console.error('Post-scan error:', err);
+                  setError('An error occurred after biometric scan. Please try again.');
+                }
+              }, 1500);
+            } else {
+              if (attempts % 4 === 0) {
+                setScanLog(prev => [
+                  ...prev,
+                  `[BIOMETRIC] Live face analyzed. Variance: ${distance.toFixed(3)} (Threshold: ${threshold})`,
+                  `[BIOMETRIC] Searching for match... Adjust position/lighting.`
+                ]);
+              }
+            }
+          } else {
+            if (attempts % 4 === 0) {
+              setScanLog(prev => [...prev, "[BIOMETRIC] Aligning face... Face frame not detected."]);
+            }
           }
-        }, 1200);
-      }
-    }, 120);
+        } catch (err) {
+          console.error("Face detection loop error:", err);
+        }
+      }, 250);
+
+    } catch (err) {
+      console.error("Camera access or loading failed:", err);
+      setScanLog(prev => [...prev, `[ERROR] Camera error: ${err.message}`]);
+      stopCamera();
+      setTimeout(() => {
+        setShowFaceModal(false);
+        setError("Webcam / Camera access is required for biometric verification.");
+      }, 2000);
+    }
   };
 
   const sendOtpAndOpenModal = async () => {
