@@ -6,27 +6,27 @@ This guide is structured as a high-impact, 6-slide deck specifically tailored fo
 ## Slide 1: Title & Real-World Impact
 *   **Slide Title:** SecureVote: Frictionless, Trustless Blockchain Voting
 *   **Subtitle:** Solving Identity Spoofing and Adoption Friction in Digital Elections
-*   **Visual Layout:** High-tech dark interface. Left: Mockup of the mobile voting UI. Right: Core statistics showing "Zero Gas Fees" and "No Browser Wallets Required".
+*   **Visual Layout:** High-tech dark interface. Left: Mockup of the mobile voting UI with a face scanning frame. Right: Core statistics showing "Zero Gas Fees" and "2-Factor Biometric + OTP Lock".
 *   **Bullet Points:**
-    *   **The Problem in Real-Life Voting:** Traditional online voting suffers from server manipulation, identity fraud, and lack of transparency. Existing Web3/DApp voting systems require complex setups (MetaMask, gas fees) that alienate 99% of voters.
-    *   **The SecureVote Solution:** An immutable, tamper-proof blockchain voting model that is completely gasless and walletless for the end user.
-    *   **Real-Life Impact:** Democratizes secure elections by providing state-level auditability on the Ethereum network with a zero-friction mobile web interface.
+    *   **The Problem in Real-Life Voting:** Traditional online voting suffers from server manipulation, identity spoofing, and lack of transparency. Existing DApp voting requires MetaMask and gas fees, while simple OTP systems can be bypassed if email/phone access is compromised.
+    *   **The SecureVote Solution:** An immutable, tamper-proof blockchain voting model that uses **Live Biometric Face Verification** and OTP 2FA, completely gasless and walletless for the voter.
+    *   **Real-Life Impact:** Prevents voter spoofing and proxy voting at the client-side level before committing a secure, audited vote to the Ethereum network.
 *   **Speaker Script:**
-    > *"Good morning. Today I am presenting SecureVote. Traditional online voting has a trust deficit, while typical blockchain voting has a huge usability barrier. SecureVote solves both: it records votes immutably on the Ethereum Sepolia network, but keeps the user experience as simple as entering an ID, scanning a face, and typing a 6-digit OTP—completely free and without installing any wallet extensions."*
+    > *"Good morning. Today I am presenting SecureVote. Online elections face a major threat from identity spoofing and ballot buying. SecureVote solves this by pairing Ethereum smart contracts with live biometric facial scanning. The voter experience remains simple—no wallets or gas fees—just a face scan, an email OTP, and a vote logged immutably on the blockchain."*
 
 ---
 
 ## Slide 2: Platform Architecture & Third-Party APIs Used
 *   **Slide Title:** Under the Hood: The Multi-API Architecture
-*   **Visual Layout:** Architecture flowchart: `Voter Client ➔ Node.js API Gateway ➔ External APIs (Firebase, Brevo, Ethereum Sepolia via RPC)`.
+*   **Visual Layout:** Architecture flowchart: `Voter Client (Camera API & face-api.js) ➔ Node.js API Gateway ➔ External APIs (Firebase, Brevo, Ethereum Sepolia via RPC)`.
 *   **Bullet Points:**
     *   **We integrated 4 critical API layers into this model:**
-        1.  **Firebase API:** Manages secure voter metadata and implements strict **Identity Locking** to prevent double-voting.
-        2.  **Brevo HTTP API:** Handles secure, outbound 2FA OTP delivery. Chosen to bypass cloud SMTP port blocks.
-        3.  **Ethers.js / RPC API (Sepolia):** Manages smart contract deployment, cryptographic signature relaying, and on-chain state updates.
-        4.  **WebRTC / Camera API:** Captures high-definition biometric face scans directly in the client browser for identity validation.
+        1.  **Biometric Recognition Engine (`face-api.js`):** Client-side neural network running on TensorFlow.js to extract facial landmarks and compare biometric signatures.
+        2.  **Firebase API:** Manages secure voter metadata (including registered 128-point face prints) and implements identity locks.
+        3.  **Brevo HTTP API:** Handles secure, outbound 2FA OTP delivery. Chosen to bypass cloud SMTP port blocks.
+        4.  **Ethers.js / RPC API (Sepolia):** Manages smart contract deployment, cryptographic signature relaying, and on-chain state updates.
 *   **Speaker Script:**
-    > *"From an engineering perspective, our platform is powered by four primary APIs. We use WebRTC for biometric capture, Firebase for state-locking, Brevo's HTTP API for secure 2FA OTP delivery, and the Ethers.js API to interact with our smart contract. The backend acts as a secure coordinator between these services."*
+    > *"From an engineering perspective, our platform is powered by four primary APIs. We use face-api.js for biometric scanning in the client browser, Firebase for storing voter faceprints and state-locking, Brevo's HTTP API for secure 2FA OTP delivery, and the Ethers.js API to write votes to our smart contract."*
 
 ---
 
@@ -45,28 +45,27 @@ This guide is structured as a high-impact, 6-slide deck specifically tailored fo
 ---
 
 ## Slide 4: Engineering Challenges & Technical Debugging
-*   **Slide Title:** Overcoming Host Firewalls & Network Constraints
-*   **Visual Layout:** A table showing the timeline of challenges faced during live deployment on Render and how they were resolved.
+*   **Slide Title:** Overcoming Neural Network Constraints & Network Blocks
+*   **Visual Layout:** A table showing the timeline of challenges faced during live development on Render and how they were resolved.
 *   **Table Content:**
-    *   *Gmail SMTP Block:* Google blocked legacy SMTP logins from cloud IPs ➔ Resolved by using **2-Step Verification & Google App Passwords**.
-    *   *Resend API Sandbox:* Free Resend tier restricted emails to the account owner ➔ Resolved by migrating to a custom email dispatch.
-    *   *Render Port Block (ETIMEDOUT):* Render blocks outgoing ports 25, 465, and 587 on free tier ➔ **Bypassed by integrating Brevo's REST API over Port 443 (HTTPS)**.
-    *   *IPv6 Route Unreachable (ENETUNREACH):* Render hosts failed resolving SMTP over IPv6 ➔ Forced **IPv4 DNS priority** in Node.js via `dns.setDefaultResultOrder('ipv4first')`.
-    *   *Brevo SMTP Activation:* Brevo blocked sending until profile setup was complete ➔ Configured business verification profile.
+    *   *Render Port Block (ETIMEDOUT):* Render blocks outgoing SMTP ports ➔ **Bypassed by integrating Brevo's REST API over Port 443 (HTTPS)**.
+    *   *Vite Bundling Errors (face-api.js):* TensorFlow.js bundle size and transpilation crashed Vite dev server ➔ **Resolved by loading the pre-compiled library via CDN**.
+    *   *Mobile Camera Scan Lag:* Heavy SSD MobileNet model lagged on mobile CPUs ➔ **Resolved by migrating to Tiny Face Detector (inputSize 224) for 10x faster mobile scans**.
+    *   *Mobile Aspect Ratio Crashes:* Rigid resolution constraints crashed on mobile cameras ➔ **Resolved by utilizing dynamic `{ facingMode: 'user' }` constraints and readyState frame verification**.
 *   **Speaker Script:**
-    > *"Deploying a secure real-time mailing system on a cloud platform like Render presented several network obstacles. Render blocks traditional outbound SMTP mail ports to prevent spam. We bypassed this by rewriting our backend to use Brevo's HTTPS REST API over port 443. We also encountered an IPv6 routing bug which we resolved by forcing Node.js to resolve DNS lookups using IPv4 first. These fixes make the system highly robust."*
+    > *"Deploying client-side AI and secure email delivery presented interesting challenges. To prevent mail blockages on Render, we bypassed SMTP using Brevo's REST API. On the frontend, loading heavy neural networks caused lag on mobile. We resolved this by migrating to a mobile-optimized Tiny Face Detector, which runs 10 times faster, and removed camera constraints to support all mobile screen aspect ratios."*
 
 ---
 
 ## Slide 5: Security Guardrails & Exploit Prevention
 *   **Slide Title:** Hardening the Security Model
-*   **Visual Layout:** Three checkmark boxes detailing: **Double-Vote Prevention**, **OTP Lifecycle**, and **Smart Contract Access Control**.
+*   **Visual Layout:** Three checkmark boxes detailing: **Biometric Verification Lock**, **Double-Vote Lock**, and **Smart Contract Access Control**.
 *   **Bullet Points:**
+    *   **Biometric Verification Lock:** Face recognition compares the live scan against the stored 128-point face print using a Euclidean distance threshold of `0.62` (designed to tolerate minor appearance variations like wearing or removing glasses) before sending the 2FA OTP.
     *   **Double-Vote Lock:** Firebase checks and sets a lock (`voted: true`) *before* initiating the gasless transaction, preventing race conditions or double-spend exploits.
-    *   **Cryptographic OTP Lifecycle:** OTPs are cryptographically generated, stored in a private server map (`otpStore`), set with a strict 5-minute TTL, and **purged immediately** upon the first verification attempt to prevent reuse.
     *   **On-Chain Security:** The Solidity contract restricts voting execution to the backend relayer using the `onlyAdmin` modifier. Malicious actors cannot bypass the frontend to cast fake votes.
 *   **Speaker Script:**
-    > *"To prevent common online voting exploits, we implement strict guardrails. Double-voting is blocked by state-locks in Firebase. The OTP is kept in secure backend memory and immediately destroyed after one use. Finally, the smart contract restricts transaction execution to our authenticated backend server, meaning voters cannot bypass the UI to manipulate the voting count."*
+    > *"To prevent common online voting exploits, we implement strict guardrails. First, voters are locked via live facial biometric recognition—comparing descriptors with Euclidean distance calculations that tolerate appearance changes like wearing glasses. Double-voting is blocked by state-locks in Firebase. Finally, the smart contract restricts transaction execution to our authenticated backend server."*
 
 ---
 
