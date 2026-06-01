@@ -606,20 +606,30 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-4">
-            <div className="glass-panel p-6">
-              <h3 className="font-bold mb-4">Live Statistics</h3>
-              <ResultsDoughnut candidates={candidates} />
-              <div className="mt-4 p-3 bg-blue-500/5 rounded border border-blue-500/10">
-                 <p className="text-[10px] text-slate-400 uppercase tracking-widest text-center">Real-time Blockchain Feed</p>
+            {electionEnded ? (
+              <div className="glass-panel p-6">
+                <h3 className="font-bold mb-4">Live Statistics</h3>
+                <ResultsDoughnut candidates={candidates} />
+                <div className="mt-4 p-3 bg-blue-500/5 rounded border border-blue-500/10">
+                   <p className="text-[10px] text-slate-400 uppercase tracking-widest text-center">Real-time Blockchain Feed</p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="glass-panel p-6 flex flex-col items-center justify-center min-h-[260px] text-center">
+                <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400 mb-3">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold mb-1">Results Sealed</h3>
+                <p className="text-xs text-slate-400 max-w-[200px]">Live voting statistics are hidden until the election concludes.</p>
+              </div>
+            )}
           </div>
 
           <div className="lg:col-span-8">
             <h2 className="text-2xl font-bold mb-4 flex items-center gap-2"><Vote className="w-6 h-6 text-blue-400" /> Digital Ballot</h2>
             <div className="space-y-4">
               {candidates.map((c, i) => {
-                const pct = totalVotes > 0 ? Math.round((c.voteCount / totalVotes) * 100) : 0;
+                const pct = electionEnded && totalVotes > 0 ? Math.round((c.voteCount / totalVotes) * 100) : 0;
                 
                 return (
                   <motion.div key={c.id} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: i * 0.05 }}
@@ -637,8 +647,12 @@ export default function VoterDashboard({ user, onLogout, onVoteComplete }) {
                     </div>
                     <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
                       <div className="text-center">
-                        <div className="text-2xl font-bold text-blue-400">{c.voteCount}</div>
-                        <div className="text-[10px] text-slate-500 uppercase tracking-widest">Votes</div>
+                        <div className="text-2xl font-bold text-blue-400">
+                          {electionEnded ? c.voteCount : '—'}
+                        </div>
+                        <div className="text-[10px] text-slate-500 uppercase tracking-widest">
+                          {electionEnded ? 'Votes' : 'Votes (Sealed)'}
+                        </div>
                       </div>
                       {!hasVoted ? (
                         <button

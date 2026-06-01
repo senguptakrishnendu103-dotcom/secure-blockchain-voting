@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Activity, Globe, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Activity, Globe, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { CONTRACT_ADDRESS, LOCAL_RPC, VotingArtifact } from '../App';
 import { ResultsDoughnut, ResultsBarChart } from './ResultsChart';
 
@@ -100,41 +100,59 @@ export default function AuditorDashboard({ onBack }) {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column: Charts */}
           <div className="lg:col-span-8 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="glass-panel p-6">
-                 <h3 className="font-bold mb-4 flex items-center gap-2"><Activity className="w-5 h-5 text-indigo-400" /> Vote Distribution</h3>
-                 <ResultsDoughnut candidates={candidates} />
-              </div>
-              <div className="glass-panel p-6">
-                 <h3 className="font-bold mb-4">Live Standings</h3>
-                 <div className="space-y-4 mt-8">
-                   {candidates.map((c, i) => {
-                      const pct = totalVotes > 0 ? Math.round((c.voteCount / totalVotes) * 100) : 0;
-                      return (
-                        <div key={c.id} className="relative">
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="font-medium text-slate-200">{c.name.split(' (')[0]}</span>
-                            <span className="text-indigo-300 font-bold">{c.voteCount} votes ({pct}%)</span>
+            {electionEnded ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="glass-panel p-6">
+                   <h3 className="font-bold mb-4 flex items-center gap-2"><Activity className="w-5 h-5 text-indigo-400" /> Vote Distribution</h3>
+                   <ResultsDoughnut candidates={candidates} />
+                </div>
+                <div className="glass-panel p-6">
+                   <h3 className="font-bold mb-4">Live Standings</h3>
+                   <div className="space-y-4 mt-8">
+                     {candidates.map((c, i) => {
+                        const pct = totalVotes > 0 ? Math.round((c.voteCount / totalVotes) * 100) : 0;
+                        return (
+                          <div key={c.id} className="relative">
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="font-medium text-slate-200">{c.name.split(' (')[0]}</span>
+                              <span className="text-indigo-300 font-bold">{c.voteCount} votes ({pct}%)</span>
+                            </div>
+                            <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                              <motion.div 
+                                initial={{ width: 0 }} 
+                                animate={{ width: `${pct}%` }} 
+                                transition={{ duration: 1, ease: "easeOut" }}
+                                className="bg-indigo-500 h-2 rounded-full"
+                              />
+                            </div>
                           </div>
-                          <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                            <motion.div 
-                              initial={{ width: 0 }} 
-                              animate={{ width: `${pct}%` }} 
-                              transition={{ duration: 1, ease: "easeOut" }}
-                              className="bg-indigo-500 h-2 rounded-full"
-                            />
-                          </div>
-                        </div>
-                      )
-                   })}
-                 </div>
+                        )
+                     })}
+                   </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="glass-panel p-8 text-center border-indigo-500/20 flex flex-col items-center justify-center min-h-[300px]">
+                <div className="w-14 h-14 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 mb-4 animate-pulse">
+                  <ShieldAlert className="w-7 h-7" />
+                </div>
+                <h3 className="text-xl font-bold mb-2 text-indigo-300">Live Standings & Charts Sealed</h3>
+                <p className="text-slate-400 text-sm max-w-md mx-auto">
+                  To ensure a fair and unbiased election, live results, standings, and distribution statistics are sealed until the voting concludes. The live cryptographic block feed below continues to record transactions transparently.
+                </p>
+              </div>
+            )}
             
-            <div className="glass-panel p-6">
-              <h3 className="font-bold mb-2">Detailed Breakdown</h3>
-              <ResultsBarChart candidates={candidates} />
-            </div>
+            {electionEnded ? (
+              <div className="glass-panel p-6">
+                <h3 className="font-bold mb-2">Detailed Breakdown</h3>
+                <ResultsBarChart candidates={candidates} />
+              </div>
+            ) : (
+              <div className="glass-panel p-6 text-center border-indigo-500/20">
+                <p className="text-slate-500 text-xs font-mono">Detailed breakdown chart will unlock at the end of the election.</p>
+              </div>
+            )}
           </div>
 
           {/* Right Column: Live Block Explorer Feed */}

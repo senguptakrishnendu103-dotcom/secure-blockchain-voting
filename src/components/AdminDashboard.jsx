@@ -215,10 +215,20 @@ export default function AdminDashboard({ onLogout }) {
             </div>
 
             {/* Chart */}
-            <div className="glass-panel p-6">
-              <h3 className="font-bold mb-4">Vote Distribution</h3>
-              <ResultsDoughnut candidates={candidates} />
-            </div>
+            {electionEnded ? (
+              <div className="glass-panel p-6">
+                <h3 className="font-bold mb-4">Vote Distribution</h3>
+                <ResultsDoughnut candidates={candidates} />
+              </div>
+            ) : (
+              <div className="glass-panel p-6 flex flex-col items-center justify-center min-h-[260px] text-center border-amber-500/20">
+                <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-400 mb-3">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold mb-1">Results Sealed</h3>
+                <p className="text-xs text-slate-400 max-w-[200px]">Vote distribution is hidden while the election is in progress.</p>
+              </div>
+            )}
           </div>
 
           {/* Candidates Table */}
@@ -226,7 +236,7 @@ export default function AdminDashboard({ onLogout }) {
             <h2 className="text-2xl font-bold mb-4">Candidates ({candidates.length})</h2>
             <div className="space-y-3 mb-6">
               {candidates.map((c, i) => {
-                const pct = totalVotes > 0 ? Math.round((c.voteCount / totalVotes) * 100) : 0;
+                const pct = electionEnded && totalVotes > 0 ? Math.round((c.voteCount / totalVotes) * 100) : 0;
                 return (
                   <motion.div key={c.id} initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: i * 0.05 }} className="glass-panel p-4 flex justify-between items-center relative overflow-hidden">
                     <div className="absolute left-0 top-0 bottom-0 bg-blue-500/10 transition-all duration-1000" style={{ width: `${pct}%` }} />
@@ -238,18 +248,34 @@ export default function AdminDashboard({ onLogout }) {
                       </div>
                     </div>
                     <div className="text-right relative z-10">
-                      <span className="text-xl font-bold text-blue-400">{c.voteCount}</span>
-                      <span className="text-slate-500 text-xs ml-1">{pct > 0 ? `(${pct}%)` : ''}</span>
+                      {electionEnded ? (
+                        <>
+                          <span className="text-xl font-bold text-blue-400">{c.voteCount}</span>
+                          <span className="text-slate-500 text-xs ml-1">{pct > 0 ? `(${pct}%)` : ''}</span>
+                        </>
+                      ) : (
+                        <span className="text-sm font-semibold text-slate-500">🔒 Sealed</span>
+                      )}
                     </div>
                   </motion.div>
                 );
               })}
             </div>
             
-            <div className="glass-panel p-6">
-              <h3 className="font-bold mb-2">Vote Breakdown</h3>
-              <ResultsBarChart candidates={candidates} />
-            </div>
+            {electionEnded ? (
+              <div className="glass-panel p-6">
+                <h3 className="font-bold mb-2">Vote Breakdown</h3>
+                <ResultsBarChart candidates={candidates} />
+              </div>
+            ) : (
+              <div className="glass-panel p-6 flex flex-col items-center justify-center min-h-[200px] text-center border-amber-500/20">
+                <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-400 mb-3">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold mb-1">Detailed Breakdown Sealed</h3>
+                <p className="text-xs text-slate-400 max-w-[250px]">Detailed candidate vote comparison will unlock once the election is officially concluded by the officer.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
