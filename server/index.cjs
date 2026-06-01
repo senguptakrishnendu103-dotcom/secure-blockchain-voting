@@ -91,7 +91,11 @@ const getVoterAddress = (voterId) => {
 // Connect to the Voting smart contract using the admin wallet (which sponsors gas)
 const getAdminContract = () => {
   const rpcUrl = (process.env.SEPOLIA_RPC_URL || process.env.VITE_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com').trim();
-  const privateKey = process.env.PRIVATE_KEY.trim();
+  const rawKey = (process.env.PRIVATE_KEY || '').trim();
+  if (!rawKey) {
+    throw new Error("Missing PRIVATE_KEY in environment variables. Please check your .env file.");
+  }
+  const privateKey = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`;
   const contractAddress = (process.env.VITE_CONTRACT_ADDRESS || '0xA033b7a4d0A2713254742945381D921F37DDf000').trim();
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);
@@ -291,7 +295,7 @@ app.post('/api/send-confirmation', async (req, res) => {
             <h3 style="margin-top: 0; color: #334155; font-size: 16px;">Voter Details</h3>
             <p style="margin: 5px 0; font-size: 14px;"><strong>Name:</strong> ${name}</p>
             <p style="margin: 5px 0; font-size: 14px;"><strong>EPIC ID:</strong> ${epicId}</p>
-            <p style="margin: 5px 0; font-size: 14px;"><strong>Aadhaar:</strong> ${epicId}</p>
+            <p style="margin: 5px 0; font-size: 14px;"><strong>Aadhaar:</strong> ${aadhaar}</p>
           </div>
 
           <div style="background: #eff6ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6;">
@@ -335,7 +339,7 @@ app.post('/api/request-password-reset', async (req, res) => {
             <h3 style="margin-top: 0; color: #334155; font-size: 16px;">Requester Details</h3>
             <p style="margin: 5px 0; font-size: 14px;"><strong>Name:</strong> ${name}</p>
             <p style="margin: 5px 0; font-size: 14px;"><strong>EPIC ID:</strong> ${epicId}</p>
-            <p style="margin: 5px 0; font-size: 14px;"><strong>Aadhaar:</strong> ${epicId}</p>
+            <p style="margin: 5px 0; font-size: 14px;"><strong>Aadhaar:</strong> ${aadhaar}</p>
           </div>
 
           <div style="background: #fffbeb; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
